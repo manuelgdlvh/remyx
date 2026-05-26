@@ -1,5 +1,5 @@
 use futures::future::LocalBoxFuture;
-use futures::{stream::LocalBoxStream, StreamExt};
+use futures::{StreamExt, stream::LocalBoxStream};
 #[cfg(feature = "crossterm")]
 use std::io;
 use std::sync::atomic::AtomicU64;
@@ -98,7 +98,7 @@ impl<Message: 'static> Source<Message> {
 
     pub(crate) fn future(fut: LocalBoxFuture<'static, Message>) -> Self {
         static ID: AtomicU64 = AtomicU64::new(0);
-        
+
         let id = (ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst) << 1)
             | Self::AUTO_INCREMENTAL_MASK;
 

@@ -8,8 +8,8 @@ use ratatui::{
 };
 
 use crate::{
-    Shell,
     element::{Element, GenericState, Tree},
+    runner::Shell,
 };
 
 pub struct PickList<Message, Item> {

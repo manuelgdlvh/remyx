@@ -9,7 +9,7 @@ use ratatui::widgets::{
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
 
-use crate::Shell;
+use crate::runner::Shell;
 
 pub mod container;
 pub mod list;
@@ -64,9 +64,29 @@ impl Tree {
     }
 
     pub fn diff<Message>(&mut self, element: &dyn Element<Message>) {
-        // TODO: Check if they have incompatible state's (Element is the source of truth)
         if !self.id.eq(&element.id()) {
             *self = Tree::init(element);
+        } else {
+            // Remove extra old children
+            self.children.truncate(element.children().len());
+
+            // Diff existing children
+            element
+                .children()
+                .iter()
+                .zip(self.children.iter_mut())
+                .for_each(|(child, tree)| {
+                    tree.diff(&**child);
+                });
+
+            // Add missing new children
+            self.children.extend(
+                element
+                    .children()
+                    .iter()
+                    .skip(self.children.len())
+                    .map(|child| Tree::init(&**child)),
+            );
         }
     }
 }

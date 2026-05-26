@@ -1,0 +1,151 @@
+use futures::StreamExt;
+use ratatui::{Terminal, prelude::Backend};
+use std::{io, pin::Pin};
+
+use crate::{
+    element::{Element, Tree},
+    stream::{self, Source},
+    task::Task,
+};
+
+type LocalBoxFusedStream<O> = Pin<Box<dyn futures::stream::FusedStream<Item = O>>>;
+
+pub struct Runner<A, B>
+where
+    A: Application,
+    B: Backend,
+{
+    terminal: Terminal<B>,
+    app: A,
+    tree: Tree,
+    subscription_events: stream::Stream<A::Message>,
+    terminal_events: LocalBoxFusedStream<io::Result<crossterm::event::Event>>,
+    messages: Vec<A::Message>,
+}
+
+impl<A, B> Runner<A, B>
+where
+    A: Application,
+    B: Backend,
+{
+    pub fn new(terminal: Terminal<B>) -> io::Result<Self> {
+        let (app, boot_fn) = A::init();
+        let tree = Tree::init(&app.view());
+
+        let mut subscriptions = app.subscription();
+        if let Some(boot_fn) = boot_fn {
+            subscriptions.push(boot_fn.into());
+        }
+
+        Ok(Self {
+            terminal,
+            app,
+            tree,
+            subscription_events: stream::Stream::init(subscriptions),
+            terminal_events: Box::pin(stream::terminal_event().fuse()),
+            messages: Vec::new(),
+        })
+    }
+
+    pub async fn run(mut self) -> io::Result<()> {
+        self.redraw()?;
+        loop {
+            futures::select_biased! {
+                event = self.subscription_events.next() => match event {
+                    Some(msg) => {
+                        self.update_app(msg);
+                    }
+                    None => break,
+                },
+
+                event = self.terminal_events.next() => match event {
+                    Some(Ok(event)) => {
+                        self.handle_terminal_event(event)?;
+                    }
+                    Some(Err(e)) => return Err(e),
+                    None => break,
+                },
+            }
+
+            self.redraw()?;
+        }
+
+        Ok(())
+    }
+
+    fn update_app(&mut self, msg: A::Message) {
+        if let Some(task) = self.app.update(msg) {
+            self.subscription_events.add(task.into());
+        }
+    }
+
+    fn handle_terminal_event(&mut self, event: crossterm::event::Event) -> io::Result<()> {
+        let mut shell = Shell::new(&mut self.messages);
+        let area = self.terminal.get_frame().area();
+
+        self.app.view().update(&self.tree, area, event, &mut shell);
+
+        if !shell.redraw() {
+            return Ok(());
+        }
+
+        let messages = self.messages.drain(..).collect::<Vec<_>>();
+
+        for msg in messages {
+            self.update_app(msg);
+        }
+
+        Ok(())
+    }
+
+    fn redraw(&mut self) -> io::Result<()> {
+        let view = self.app.view();
+        self.tree.diff(&view);
+
+        let _ = self.terminal.draw(|frame| {
+            view.draw(&self.tree, frame.area(), frame.buffer_mut());
+        });
+
+        Ok(())
+    }
+}
+
+pub trait Application {
+    type Message: 'static;
+
+    fn init() -> (Self, Option<Task<Self::Message>>)
+    where
+        Self: Sized;
+    fn view(&self) -> impl Element<Self::Message> + use<Self>;
+    fn update(&mut self, message: Self::Message) -> Option<Task<Self::Message>>;
+    fn subscription(&self) -> Vec<Source<Self::Message>> {
+        vec![]
+    }
+}
+
+#[derive(Debug)]
+pub struct Shell<'a, Message> {
+    messages: &'a mut Vec<Message>,
+    redraw_requested: bool,
+}
+
+impl<'a, Message> Shell<'a, Message> {
+    pub fn new(messages: &'a mut Vec<Message>) -> Self {
+        Self {
+            messages,
+            redraw_requested: false,
+        }
+    }
+
+    pub fn publish(&mut self, message: Message) {
+        self.messages.push(message);
+    }
+
+    pub fn redraw(&self) -> bool {
+        self.redraw_requested || !self.messages.is_empty()
+    }
+
+    pub fn request_redraw(&mut self) {
+        self.redraw_requested = true;
+    }
+}

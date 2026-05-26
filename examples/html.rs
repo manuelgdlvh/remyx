@@ -1,19 +1,19 @@
 use crossterm::{
     event::{EnableBracketedPaste, EnableFocusChange, EnableMouseCapture},
-    terminal::{enable_raw_mode, EnterAlternateScreen},
+    terminal::{EnterAlternateScreen, enable_raw_mode},
 };
-use lol_html::{element, HtmlRewriter, Settings};
+use lol_html::{HtmlRewriter, Settings, element};
 use ratatui::{
+    Terminal,
     layout::{Constraint, Layout},
     prelude::CrosstermBackend,
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, ListItem, Paragraph},
-    Terminal,
 };
 use remyx::task::Task;
 use remyx::{
-    element::{container::Container, list::PickList, Element},
-    Application,
+    element::{Element, container::Container, list::PickList},
+    runner::Application,
 };
 use std::io;
 
