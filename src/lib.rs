@@ -1,9 +1,10 @@
-use std::io;
-
 use futures::StreamExt;
 use ratatui::Terminal;
 use ratatui::backend::Backend;
+use std::io;
+use std::pin::pin;
 
+use crate::task::Task;
 use crate::{
     element::{Element, Tree},
     stream::Source,
@@ -11,39 +12,40 @@ use crate::{
 
 pub mod element;
 pub mod stream;
-
-// TODO: Navigation by keyboard or by mouse (both?). Focus behavior
-// TODO: Add execution async task and results as Stream but not execution.
-
-enum Event<Message> {
-    Terminal(crossterm::event::Event),
-    Subscription(Message),
-}
+pub mod task;
 
 pub async fn run<A: Application, B: Backend>(mut terminal: Terminal<B>) -> io::Result<()> {
-    let mut app = A::init();
+    let (mut app, boot_fn) = A::init();
+
     let mut view = app.view();
     let mut tree = Tree::init(&view);
-
     let _ = terminal.draw(|frame| {
         view.draw(&tree, frame.area(), frame.buffer_mut());
     });
 
-    let mut messages = Vec::new();
+    let mut subscriptions = app.subscription();
+    if let Some(boot_fn) = boot_fn {
+        subscriptions.push(boot_fn.into());
+    }
 
-    let terminal_events = stream::terminal_event().map(|res| res.map(Event::Terminal));
-    let subscription_events = stream::Stream::init(app.subscription())
-        .map(|res| io::Result::Ok(Event::Subscription(res)));
-    let mut events = futures::stream::select(terminal_events, subscription_events);
-    while let Some(Ok(item)) = events.next().await {
-        match item {
-            Event::Terminal(event) => match event {
-                crossterm::event::Event::FocusGained
-                | crossterm::event::Event::FocusLost
-                | crossterm::event::Event::Key(_)
-                | crossterm::event::Event::Mouse(_)
-                | crossterm::event::Event::Paste(_)
-                | crossterm::event::Event::Resize(_, _) => {
+    let mut subscription_events = pin!(stream::Stream::init(subscriptions));
+    let mut terminal_events = pin!(stream::terminal_event().fuse());
+    let mut messages = Vec::new();
+    loop {
+        futures::select_biased! {
+            event = subscription_events.next() => match event {
+                Some(msg) =>  {
+                      if let Some(task) = app.update(msg) {
+                          subscription_events.add(task.into());
+                      }
+
+                view = app.view();
+                tree.diff(&app.view());
+                },
+                None => break,
+            },
+            event = terminal_events.next() => match event {
+                Some(Ok(event)) => {
                     let mut shell = Shell::new(&mut messages);
                     let area = terminal.get_frame().area();
                     view.update(&tree, area, event, &mut shell);
@@ -52,18 +54,21 @@ pub async fn run<A: Application, B: Backend>(mut terminal: Terminal<B>) -> io::R
                         continue;
                     }
 
-                    messages.drain(..).for_each(|msg| app.update(msg));
+                    for msg in messages.drain(..) {
+
+                                 if let Some(task) = app.update(msg) {
+                          subscription_events.add(task.into());
+                      }
+                    }
 
                     view = app.view();
                     tree.diff(&app.view());
+                },
+                Some(Err(e)) => {
+                    return Err(e);
                 }
+                None => break,
             },
-            Event::Subscription(message) => {
-                app.update(message);
-
-                view = app.view();
-                tree.diff(&app.view());
-            }
         }
 
         let _ = terminal.draw(|frame| {
@@ -75,11 +80,13 @@ pub async fn run<A: Application, B: Backend>(mut terminal: Terminal<B>) -> io::R
 }
 
 pub trait Application {
-    type Message;
+    type Message: 'static;
 
-    fn init() -> Self;
+    fn init() -> (Self, Option<Task<Self::Message>>)
+    where
+        Self: Sized;
     fn view(&self) -> impl Element<Self::Message> + use<Self>;
-    fn update(&mut self, message: Self::Message);
+    fn update(&mut self, message: Self::Message) -> Option<Task<Self::Message>>;
     fn subscription(&self) -> Vec<Source<Self::Message>> {
         vec![]
     }

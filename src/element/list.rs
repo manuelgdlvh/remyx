@@ -15,7 +15,7 @@ use crate::{
 pub struct PickList<Message, Item> {
     list: Box<dyn Element<Message>>,
     items: Vec<Item>,
-    on_select: Option<fn(&Item) -> Option<Message>>,
+    on_select: Option<fn(&Item) -> Message>,
 }
 
 impl<Message: 'static, Item: 'static> Element<Message> for PickList<Message, Item> {
@@ -36,9 +36,9 @@ impl<Message: 'static, Item: 'static> Element<Message> for PickList<Message, Ite
 
         if let Some(f) = self.on_select
             && let Some(msg) = match (previous, next) {
-                (None, Some(next)) => f(self.items.get(next).unwrap()),
+                (None, Some(next)) => Some(f(self.items.get(next).unwrap())),
                 (Some(previous), Some(next)) if previous != next => {
-                    f(self.items.get(next).unwrap())
+                    Some(f(self.items.get(next).unwrap()))
                 }
                 _ => None,
             }
@@ -75,7 +75,7 @@ impl<Message, Item> PickList<Message, Item> {
         }
     }
 
-    pub fn on_select(mut self, f: fn(&Item) -> Option<Message>) -> Self {
+    pub fn on_select(mut self, f: fn(&Item) -> Message) -> Self {
         self.on_select = Some(f);
         self
     }
