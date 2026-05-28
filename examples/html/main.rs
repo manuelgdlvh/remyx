@@ -77,10 +77,11 @@ impl Application for App {
             Constraint::Percentage(80),
         ]))
         .with(
-            PickList::list(vec![Link::C, Link::Rust, Link::Java], |list| {
-                list.block(
+            PickList::new(vec![Link::C, Link::Rust, Link::Java])
+                .block(
                     Block::default()
-                        .borders(Borders::BOTTOM)
+                        .title_top("Links")
+                        .borders(Borders::ALL)
                         .border_style(Style::default().fg(Color::Cyan)),
                 )
                 .style(Style::default().fg(Color::White))
@@ -90,8 +91,7 @@ impl Application for App {
                         .add_modifier(Modifier::REVERSED | Modifier::BOLD),
                 )
                 .highlight_symbol("> ")
-            })
-            .on_select(|item| Message::LinkChanged(*item)),
+                .on_select(|item| Message::LinkChanged(*item)),
         )
         .with(
             Paragraph::new(self.html_page.to_string())

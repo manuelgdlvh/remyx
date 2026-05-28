@@ -4,7 +4,9 @@ use crossterm::event::MouseButton;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    widgets::{List, ListItem, ListState, StatefulWidget},
+    style::Style,
+    text::Line,
+    widgets::{Block, HighlightSpacing, List, ListDirection, ListItem, ListState, StatefulWidget},
 };
 
 use crate::{
@@ -12,67 +14,79 @@ use crate::{
     runner::Shell,
 };
 
-pub struct PickList<Message, Item> {
-    list: Box<dyn Element<Message>>,
+pub struct PickList<Message, Item>
+where
+    Item: Into<ListItem<'static>> + Clone,
+{
+    list: List<'static>,
+    block: Option<Block<'static>>,
+    direction: ListDirection,
     items: Vec<Item>,
     on_select: Option<fn(&Item) -> Message>,
 }
 
-impl<Message: 'static, Item: 'static> Element<Message> for PickList<Message, Item> {
-    fn draw(&self, tree: &Tree, area: Rect, buffer: &mut Buffer) {
-        self.list.draw(tree, area, buffer);
-    }
-
-    fn update(
-        &self,
-        tree: &Tree,
-        area: Rect,
-        event: crossterm::event::Event,
-        shell: &mut Shell<'_, Message>,
-    ) {
-        let previous = tree.with_state(|state: &State| state.list.selected());
-        self.list.update(tree, area, event, shell);
-        let next = tree.with_state(|state: &State| state.list.selected());
-
-        if let Some(f) = self.on_select
-            && let Some(msg) = match (previous, next) {
-                (None, Some(next)) => Some(f(self.items.get(next).unwrap())),
-                (Some(previous), Some(next)) if previous != next => {
-                    Some(f(self.items.get(next).unwrap()))
-                }
-                _ => None,
-            }
-        {
-            shell.publish(msg);
-        }
-    }
-
-    fn id(&self) -> TypeId {
-        TypeId::of::<PickList<Message, Item>>()
-    }
-
-    fn state(&self) -> Option<GenericState> {
-        self.list.state()
-    }
-
-    fn children(&self) -> &[Box<dyn Element<Message>>] {
-        &[]
-    }
-}
-
-impl<Message, Item> PickList<Message, Item> {
-    pub fn list<F>(items: Vec<Item>, f: F) -> Self
-    where
-        F: FnOnce(List) -> List,
-        Item: Into<ListItem<'static>> + Clone,
-    {
-        // TODO: Check
-        let list: Box<dyn Element<Message>> = Box::new(f(List::new(items.clone())));
+impl<Message, Item> PickList<Message, Item>
+where
+    Item: Into<ListItem<'static>> + Clone,
+{
+    pub fn new(items: Vec<Item>) -> Self {
         Self {
-            list,
+            list: List::new(items.clone()),
             items,
             on_select: None,
+            direction: ListDirection::default(),
+            block: None,
         }
+    }
+
+    #[must_use = "method moves the value of self and returns the modified value"]
+    pub fn block(mut self, block: Block<'static>) -> Self {
+        self.block = Some(block.clone());
+        self.list = self.list.block(block);
+        self
+    }
+
+    #[must_use = "method moves the value of self and returns the modified value"]
+    pub fn style<S: Into<Style>>(mut self, style: S) -> Self {
+        self.list = self.list.style(style.into());
+        self
+    }
+
+    #[must_use = "method moves the value of self and returns the modified value"]
+    pub fn highlight_symbol<L: Into<Line<'static>>>(mut self, highlight_symbol: L) -> Self {
+        self.list = self.list.highlight_symbol(highlight_symbol.into());
+        self
+    }
+
+    #[must_use = "method moves the value of self and returns the modified value"]
+    pub fn highlight_style<S: Into<Style>>(mut self, style: S) -> Self {
+        self.list = self.list.highlight_style(style.into());
+        self
+    }
+
+    #[must_use = "method moves the value of self and returns the modified value"]
+    pub fn repeat_highlight_symbol(mut self, repeat: bool) -> Self {
+        self.list = self.list.repeat_highlight_symbol(repeat);
+        self
+    }
+
+    #[must_use = "method moves the value of self and returns the modified value"]
+    pub fn highlight_spacing(mut self, value: HighlightSpacing) -> Self {
+        self.list = self.list.highlight_spacing(value);
+        self
+    }
+
+    #[must_use = "method moves the value of self and returns the modified value"]
+    pub fn direction(mut self, direction: ListDirection) -> Self {
+        self.direction = direction;
+        self.list = self.list.direction(direction);
+        self
+    }
+
+    #[must_use = "method moves the value of self and returns the modified value"]
+    pub fn scroll_padding(mut self, padding: usize) -> Self {
+        self.list = self.list.scroll_padding(padding);
+        self
     }
 
     pub fn on_select(mut self, f: fn(&Item) -> Message) -> Self {
@@ -81,15 +95,13 @@ impl<Message, Item> PickList<Message, Item> {
     }
 }
 
-pub struct State {
-    list: ListState,
-    hovered: bool,
-}
-
-impl<Message> Element<Message> for List<'_> {
+impl<Message: 'static, Item: 'static> Element<Message> for PickList<Message, Item>
+where
+    Item: Into<ListItem<'static>> + Clone,
+{
     fn draw(&self, tree: &Tree, area: Rect, buffer: &mut Buffer) {
         tree.with_state_mut(|state: &mut State| {
-            self.render(area, buffer, &mut state.list);
+            (&self.list).render(area, buffer, &mut state.list);
         });
     }
 
@@ -100,6 +112,12 @@ impl<Message> Element<Message> for List<'_> {
         event: crossterm::event::Event,
         shell: &mut Shell<'_, Message>,
     ) {
+        let items_area = if let Some(block) = self.block.as_ref() {
+            block.inner(area)
+        } else {
+            area
+        };
+
         match event {
             crossterm::event::Event::Key(key_event)
                 if tree.with_state(|state: &State| state.hovered) =>
@@ -108,12 +126,25 @@ impl<Message> Element<Message> for List<'_> {
                     crossterm::event::KeyCode::Up => {
                         tree.with_state_mut(|state: &mut State| {
                             state.list.select_previous();
+
+                            if let Some(on_select) = self.on_select
+                                && let Some(item_index) = state.list.selected()
+                            {
+                                shell.publish(on_select(self.items.get(item_index).unwrap()))
+                            }
                         });
+
                         shell.request_redraw();
                     }
                     crossterm::event::KeyCode::Down => {
                         tree.with_state_mut(|state: &mut State| {
                             state.list.select_next();
+
+                            if let Some(on_select) = self.on_select
+                                && let Some(item_index) = state.list.selected()
+                            {
+                                shell.publish(on_select(self.items.get(item_index).unwrap()))
+                            }
                         });
                         shell.request_redraw();
                     }
@@ -121,13 +152,12 @@ impl<Message> Element<Message> for List<'_> {
                     _ => {}
                 }
             }
-
             crossterm::event::Event::Mouse(mouse_event) => {
                 tree.with_state_mut(|state: &mut State| {
-                    state.hovered = mouse_event.column >= area.x
-                        && mouse_event.column < (area.x + area.width)
-                        && mouse_event.row >= area.y
-                        && mouse_event.row < (area.y + area.height);
+                    state.hovered = mouse_event.column >= items_area.x
+                        && mouse_event.column < (items_area.x + items_area.width)
+                        && mouse_event.row >= items_area.y
+                        && mouse_event.row < (items_area.y + items_area.height);
                 });
 
                 if !tree.with_state(|state: &State| state.hovered) {
@@ -138,15 +168,20 @@ impl<Message> Element<Message> for List<'_> {
                     crossterm::event::MouseEventKind::Up(mouse_button)
                         if mouse_button.eq(&MouseButton::Left) =>
                     {
-                        let selected = (mouse_event.row - area.y) as usize;
-                        if selected > self.len() - 1 {
+                        let item_index = (mouse_event.row - items_area.y) as usize;
+                        if item_index >= self.list.len() {
                             return;
                         }
 
                         tree.with_state_mut(|state: &mut State| {
-                            state.list = state.list.with_selected(Some(selected))
+                            state.list = state.list.with_selected(Some(item_index))
                         });
+
                         shell.request_redraw();
+
+                        if let Some(on_select) = self.on_select {
+                            shell.publish(on_select(self.items.get(item_index).unwrap()))
+                        }
                     }
                     _ => {}
                 }
@@ -155,8 +190,8 @@ impl<Message> Element<Message> for List<'_> {
         }
     }
 
-    fn id(&self) -> std::any::TypeId {
-        TypeId::of::<List>()
+    fn id(&self) -> TypeId {
+        TypeId::of::<PickList<Message, Item>>()
     }
 
     fn state(&self) -> Option<GenericState> {
@@ -169,4 +204,9 @@ impl<Message> Element<Message> for List<'_> {
     fn children(&self) -> &[Box<dyn Element<Message>>] {
         &[]
     }
+}
+
+pub struct State {
+    list: ListState,
+    hovered: bool,
 }
