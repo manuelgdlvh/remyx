@@ -1,4 +1,5 @@
 use std::any::TypeId;
+use std::borrow::Borrow;
 
 use crate::{
     element::{Element, State, Tree},
@@ -12,10 +13,12 @@ use remyx_widgets::{
     list::{List, ListDirection, ListItem, ListState},
 };
 
-impl<Item, Message> Element<Message> for List<'static, Item, Message>
+impl<Item, Items, Message> Element<Message> for List<'static, Item, Items, Message>
 where
     Message: 'static,
-    Item: Clone + Into<ListItem<'static>> + 'static,
+    Item: PartialEq + 'static,
+    Items: Borrow<[Item]> + 'static,
+    for<'b> ListItem<'static>: From<&'b Item>,
 {
     fn draw(&self, tree: &Tree, area: Rect, buffer: &mut Buffer) {
         tree.state_mut::<ListState, _, _>(|s| {
@@ -97,33 +100,38 @@ where
         };
 
         if let Some(selection) = selection {
-            tree.state_mut::<ListState, _, _>(|s| {
-                match selection {
-                    Selection::Previous => s.select_previous(),
-                    Selection::Next => s.select_next(),
-                    Selection::Index(index) => *s = s.with_selected(Some(index)),
-                }
+            let len = self.len();
+            if len == 0 {
+                return;
+            }
 
-                ctx.redraw();
-                if let Some(f) = self.on_select_ref()
-                    && let Some(item_index) = s.selected()
-                    && let Some(item) = self.items_as_slice().get(item_index)
-                {
-                    ctx.publish(f(item));
-                }
-            });
+            let current = self.selected();
+            let new_index = match selection {
+                Selection::Previous => current.map_or(0, |i| i.saturating_sub(1)),
+                Selection::Next => current.map_or(0, |i| (i + 1).min(len - 1)),
+                Selection::Index(index) => index.min(len - 1),
+            };
+
+            if current == Some(new_index) {
+                return;
+            }
+
+            ctx.redraw();
+            if let Some(item) = self.items().get(new_index) {
+                ctx.publish(self.on_select_fn()(item));
+            }
         }
     }
 
     fn diff(&self, tree: &mut Tree) {
-        let length = tree.state::<ListState, _, _>(|s| s.len());
-        if self.len() != length {
+        let old_length = tree.state::<ListState, _, _>(|s| s.len());
+        if old_length > self.len() {
             tree.state = Element::<Message>::state(self);
         }
     }
 
     fn id(&self) -> TypeId {
-        TypeId::of::<List<'static, Item, Message>>()
+        TypeId::of::<List<'static, Item, Items, Message>>()
     }
 
     fn state(&self) -> Option<State> {
