@@ -33,9 +33,9 @@ where
         ctx: &mut Context<Message>,
     ) {
         enum Movement {
-            RowPrevious,
-            RowNext,
-            RowAt(usize),
+            Previous,
+            Next,
+            At(usize),
         }
 
         if !ctx.cursor().is_hovering(area) && !self.is_focused() {
@@ -45,8 +45,8 @@ where
         let items_area = self.items_layout(area);
         let movement = match event {
             crossterm::event::Event::Key(key_event) => match key_event.code {
-                crossterm::event::KeyCode::Up => Some(Movement::RowPrevious),
-                crossterm::event::KeyCode::Down => Some(Movement::RowNext),
+                crossterm::event::KeyCode::Up => Some(Movement::Previous),
+                crossterm::event::KeyCode::Down => Some(Movement::Next),
                 _ => None,
             },
             crossterm::event::Event::Mouse(mouse_event) => match mouse_event.kind {
@@ -63,14 +63,14 @@ where
                             self.row_heights().enumerate().skip(offset).find_map(
                                 |(index, height)| {
                                     item_height += height as usize;
-                                    (click_position < item_height).then_some(Movement::RowAt(index))
+                                    (click_position < item_height).then_some(Movement::At(index))
                                 },
                             )
                         })
                         .flatten()
                 }
-                crossterm::event::MouseEventKind::ScrollUp => Some(Movement::RowPrevious),
-                crossterm::event::MouseEventKind::ScrollDown => Some(Movement::RowNext),
+                crossterm::event::MouseEventKind::ScrollUp => Some(Movement::Previous),
+                crossterm::event::MouseEventKind::ScrollDown => Some(Movement::Next),
                 _ => None,
             },
             _ => None,
@@ -84,9 +84,9 @@ where
 
             let current = self.selected();
             let new_index = match movement {
-                Movement::RowPrevious => current.map_or(0, |i| i.saturating_sub(1)),
-                Movement::RowNext => current.map_or(0, |i| (i + 1).min(len - 1)),
-                Movement::RowAt(index) => index.min(len - 1),
+                Movement::Previous => current.map_or(0, |i| i.saturating_sub(1)),
+                Movement::Next => current.map_or(0, |i| (i + 1).min(len - 1)),
+                Movement::At(index) => index.min(len - 1),
             };
 
             if current == Some(new_index) {
