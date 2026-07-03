@@ -25,18 +25,101 @@ You can also use the `subscription()` method to define async stream sources that
 
 Async tasks can be spawned during initialization or inside the update function by providing a future that returns a message.
 
-## Widget element's 
+## Getting Started
 
-If you want to build custom widgets and / or manage their state internally (such as navigation, multi-step flows, mouse interactions, ...), you can define your own `Element` type.
+Add `remyx` to your `Cargo.toml`:
 
-`Element` is the rendering abstraction used by Remyx. Each element can contain its own internal state, so your application does not need to manage widget state directly.
+```toml
+[dependencies]
+remyx = { version = "0.1.0-beta.4", features = ["tokio"] }
+```
 
-The behavior and rendering of an element can change through state updates inside the element update hook.
+Implement the `Application` trait following these steps:
 
-## Current Support
+### 1. Define your state and messages
 
-At the moment, `Element` is implemented for all stateless Ratatui widgets and for `List` (renamed to `PickList`). This also serves as an example of how internal state can be hidden inside the element itself.
+Your state holds everything the app needs to render. Messages represent things that can happen.
 
-## Examples
+```rust
+struct App {
+    quote_index: usize,
+    exit: bool,
+}
 
-You can find usage examples in the `/examples` folder.
+enum Message {
+    Next,
+    Previous,
+    Exit,
+}
+```
+
+### 2. Initialize
+
+Return the initial state. You can optionally return a `Task` to run async work at startup.
+
+```rust
+fn init<Runtime: runtime::Runtime>() -> (Self, Option<Task<Message>>) {
+    (Self { quote_index: 0, exit: false }, None)
+}
+```
+
+### 3. Describe the view
+
+Build your UI from the current state. Any Ratatui widget works as an `Element`.
+
+```rust
+fn view(&self) -> impl Element<Self::Message> {
+    Paragraph::new(QUOTES[self.quote_index])
+}
+```
+
+### 4. Handle updates
+
+React to messages by changing state. Return a `Task` if you need to do async work.
+
+```rust
+fn update<Runtime: runtime::Runtime>(
+    &mut self,
+    message: Self::Message,
+) -> Option<Task<Self::Message>> {
+    match message {
+        Message::Next => { self.quote_index = (self.quote_index + 1) % QUOTES.len(); }
+        Message::Previous => { self.quote_index = self.quote_index.saturating_sub(1); }
+        Message::Exit => { self.exit = true; }
+    }
+    None
+}
+```
+
+### 5. Subscribe to events
+
+Map terminal events (keys, mouse, ...) to your messages.
+
+```rust
+fn subscription<Terminal: terminal::Terminal>(
+    &self,
+) -> Vec<Subscription<Terminal, Self::Message>> {
+    vec![Subscription::key(|key| match key.code {
+        KeyCode::Right => Some(Message::Next),
+        KeyCode::Left => Some(Message::Previous),
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Some(Message::Exit),
+        _ => None,
+    })]
+}
+```
+
+### 6. Exit condition
+
+Tell the framework when to stop.
+
+```rust
+fn exit(&self) -> bool {
+    self.exit
+}
+```
+
+That's the full cycle: **subscriptions** turn events into messages, **update** changes state, and **view** renders it.
+
+## Status
+
+Remyx is in an early experimental stage. The API is subject to breaking changes in future releases.

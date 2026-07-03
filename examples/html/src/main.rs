@@ -36,6 +36,7 @@ fn main() -> io::Result<()> {
 
 pub struct App {
     html_page: String,
+    link: Option<Link>,
     focus: Focus,
     exit: bool,
 }
@@ -68,6 +69,7 @@ impl Application for App {
     fn init<Runtime: runtime::Runtime>() -> (Self, Option<Task<Message>>) {
         let self_ = Self {
             html_page: String::new(),
+            link: None,
             focus: Focus::List,
             exit: false,
         };
@@ -75,22 +77,23 @@ impl Application for App {
     }
 
     fn view(&self) -> impl Element<Self::Message> {
-        let mut list = List::new([Link::C, Link::Java, Link::Rust])
-            .block(
-                Block::default()
-                    .title_top("Links")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Cyan)),
-            )
-            .style(Style::default().fg(Color::White))
-            .highlight_style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::REVERSED | Modifier::BOLD),
-            )
-            .highlight_symbol("> ")
-            .on_select(|item| Message::LinkChanged(*item))
-            .focus(matches!(self.focus, Focus::List));
+        let mut list = List::new(Link::ALL, self.link.as_ref(), |item: &Link| {
+            Message::LinkChanged(*item)
+        })
+        .block(
+            Block::default()
+                .title_top("Links")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .style(Style::default().fg(Color::White))
+        .highlight_style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::REVERSED | Modifier::BOLD),
+        )
+        .highlight_symbol("> ")
+        .focus(matches!(self.focus, Focus::List));
 
         let mut paragraph = Paragraph::new(self.html_page.to_string())
             .centered()
@@ -136,6 +139,7 @@ impl Application for App {
     ) -> Option<Task<Self::Message>> {
         match message {
             Message::LinkChanged(link) => {
+                self.link = Some(link);
                 let task = match link {
                     Link::C => {
                         html_page("https://es.wikipedia.org/wiki/C_(lenguaje_de_programación)")
@@ -183,15 +187,19 @@ impl Application for App {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Link {
     Rust,
     C,
     Java,
 }
 
-impl From<Link> for ListItem<'static> {
-    fn from(link: Link) -> Self {
+impl Link {
+    const ALL: &[Link] = &[Link::C, Link::Java, Link::Rust];
+}
+
+impl From<&Link> for ListItem<'static> {
+    fn from(link: &Link) -> Self {
         match link {
             Link::Rust => ListItem::new("Rust"),
             Link::C => ListItem::new("C"),

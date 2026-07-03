@@ -35,6 +35,7 @@ fn main() -> io::Result<()> {
 
 pub struct App {
     detail: String,
+    language: Option<Language>,
     focus: Focus,
     exit: bool,
 }
@@ -55,7 +56,7 @@ impl Focus {
 }
 
 pub enum Message {
-    DetailChanged(String),
+    LanguageSelected(Language),
     FocusNext,
     Exit,
 }
@@ -66,6 +67,7 @@ impl Application for App {
     fn init<Runtime: runtime::Runtime>() -> (Self, Option<Task<Message>>) {
         let self_ = Self {
             detail: String::new(),
+            language: None,
             focus: Focus::Table,
             exit: false,
         };
@@ -80,6 +82,8 @@ impl Application for App {
                 Constraint::Percentage(20),
                 Constraint::Percentage(40),
             ],
+            self.language.as_ref(),
+            |lang: &Language| Message::LanguageSelected(*lang),
         )
         .header(
             Row::new(vec!["Language", "Year", "Designer / Notes"]).style(
@@ -101,14 +105,6 @@ impl Application for App {
                 .add_modifier(Modifier::REVERSED | Modifier::BOLD),
         )
         .highlight_symbol("> ")
-        .on_select(|lang| {
-            Message::DetailChanged(format!(
-                "{} was created in {} by {}.",
-                lang.name(),
-                lang.year(),
-                lang.designer()
-            ))
-        })
         .focus(matches!(self.focus, Focus::Table));
 
         let mut paragraph = Paragraph::new(self.detail.clone())
@@ -154,8 +150,14 @@ impl Application for App {
         message: Self::Message,
     ) -> Option<Task<Self::Message>> {
         match message {
-            Message::DetailChanged(detail) => {
-                self.detail = detail;
+            Message::LanguageSelected(lang) => {
+                self.detail = format!(
+                    "{} was created in {} by {}.",
+                    lang.name(),
+                    lang.year(),
+                    lang.designer()
+                );
+                self.language = Some(lang);
                 None
             }
             Message::FocusNext => {
@@ -188,7 +190,7 @@ impl Application for App {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Language {
     Rust,
     C,
@@ -327,13 +329,11 @@ impl Language {
     }
 }
 
-impl From<Language> for Row<'static> {
-    fn from(language: Language) -> Self {
+impl From<&Language> for Row<'static> {
+    fn from(language: &Language) -> Self {
         let mut designer_lines = vec![language.designer().to_string()];
         designer_lines.extend(language.notes().iter().map(|note| note.to_string()));
 
-        // Height grows with the number of description lines, so rows have varying sizes. The
-        // bottom margin adds a blank separator line that the hit-testing must also account for.
         let height = designer_lines.len() as u16;
 
         Row::new(vec![

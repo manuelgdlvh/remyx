@@ -1,4 +1,5 @@
 use std::any::TypeId;
+use std::borrow::Borrow;
 
 use crate::{
     element::{Element, State, Tree},
@@ -11,10 +12,12 @@ use remyx_widgets::{
     table::{Row, Table, TableState},
 };
 
-impl<Item, Message> Element<Message> for Table<'static, Item, Message>
+impl<Item, Items, Message> Element<Message> for Table<'static, Item, Items, Message>
 where
     Message: 'static,
-    Item: Clone + Into<Row<'static>> + 'static,
+    Item: PartialEq + 'static,
+    Items: Borrow<[Item]> + 'static,
+    for<'b> Row<'static>: From<&'b Item>,
 {
     fn draw(&self, tree: &Tree, area: Rect, buffer: &mut Buffer) {
         tree.state_mut::<TableState, _, _>(|s| {
@@ -29,14 +32,10 @@ where
         event: crossterm::event::Event,
         ctx: &mut Context<Message>,
     ) {
-        // Rows are navigated vertically and columns horizontally. Only a row change selects a
-        // different `Item` reported through `on_select`.
         enum Movement {
-            RowPrevious,
-            RowNext,
-            RowAt(usize),
-            ColumnPrevious,
-            ColumnNext,
+            Previous,
+            Next,
+            At(usize),
         }
 
         if !ctx.cursor().is_hovering(area) && !self.is_focused() {
@@ -46,21 +45,8 @@ where
         let items_area = self.items_layout(area);
         let movement = match event {
             crossterm::event::Event::Key(key_event) => match key_event.code {
-                crossterm::event::KeyCode::Enter => {
-                    tree.state::<TableState, _, _>(|s| {
-                        if let Some(f) = self.on_submit_ref()
-                            && let Some(item_index) = s.selected()
-                            && let Some(item) = self.items_as_slice().get(item_index)
-                        {
-                            ctx.publish(f(item));
-                        }
-                    });
-                    None
-                }
-                crossterm::event::KeyCode::Up => Some(Movement::RowPrevious),
-                crossterm::event::KeyCode::Down => Some(Movement::RowNext),
-                crossterm::event::KeyCode::Left => Some(Movement::ColumnPrevious),
-                crossterm::event::KeyCode::Right => Some(Movement::ColumnNext),
+                crossterm::event::KeyCode::Up => Some(Movement::Previous),
+                crossterm::event::KeyCode::Down => Some(Movement::Next),
                 _ => None,
             },
             crossterm::event::Event::Mouse(mouse_event) => match mouse_event.kind {
@@ -70,8 +56,6 @@ where
                     ctx.cursor()
                         .is_hovering(items_area)
                         .then(|| {
-                            // Rows can span several lines (height + margins), so walk them from the
-                            // offset accumulating spans until the total passes the clicked line.
                             let offset = tree.state::<TableState, _, _>(|s| s.offset());
                             let click_position = (mouse_event.row - items_area.y) as usize;
 
@@ -79,67 +63,52 @@ where
                             self.row_heights().enumerate().skip(offset).find_map(
                                 |(index, height)| {
                                     item_height += height as usize;
-                                    (click_position < item_height).then_some(Movement::RowAt(index))
+                                    (click_position < item_height).then_some(Movement::At(index))
                                 },
                             )
                         })
                         .flatten()
                 }
-                crossterm::event::MouseEventKind::ScrollUp => Some(Movement::RowPrevious),
-                crossterm::event::MouseEventKind::ScrollDown => Some(Movement::RowNext),
+                crossterm::event::MouseEventKind::ScrollUp => Some(Movement::Previous),
+                crossterm::event::MouseEventKind::ScrollDown => Some(Movement::Next),
                 _ => None,
             },
             _ => None,
         };
 
         if let Some(movement) = movement {
-            tree.state_mut::<TableState, _, _>(|s| {
-                let row_changed = match movement {
-                    Movement::RowPrevious => {
-                        s.select_previous();
-                        true
-                    }
-                    Movement::RowNext => {
-                        s.select_next();
-                        true
-                    }
-                    Movement::RowAt(index) => {
-                        s.select(Some(index));
-                        true
-                    }
-                    Movement::ColumnPrevious => {
-                        s.select_previous_column();
-                        false
-                    }
-                    Movement::ColumnNext => {
-                        s.select_next_column();
-                        false
-                    }
-                };
+            let len = self.len();
+            if len == 0 {
+                return;
+            }
 
-                ctx.redraw();
+            let current = self.selected();
+            let new_index = match movement {
+                Movement::Previous => current.map_or(0, |i| i.saturating_sub(1)),
+                Movement::Next => current.map_or(0, |i| (i + 1).min(len - 1)),
+                Movement::At(index) => index.min(len - 1),
+            };
 
-                // Publish the callback only when the selected row changed.
-                if row_changed
-                    && let Some(f) = self.on_select_ref()
-                    && let Some(item_index) = s.selected()
-                    && let Some(item) = self.items_as_slice().get(item_index)
-                {
-                    ctx.publish(f(item));
-                }
-            });
+            if current == Some(new_index) {
+                return;
+            }
+
+            ctx.redraw();
+            if let Some(item) = self.items().get(new_index) {
+                ctx.publish(self.on_select_fn()(item));
+            }
         }
     }
 
     fn diff(&self, tree: &mut Tree) {
-        let length = tree.state::<TableState, _, _>(|s| s.len());
-        if self.len() != length {
+        let old_length = tree.state::<TableState, _, _>(|s| s.len());
+        if old_length > self.len() {
             tree.state = Element::<Message>::state(self);
         }
     }
 
     fn id(&self) -> TypeId {
-        TypeId::of::<Table<'static, Item, Message>>()
+        TypeId::of::<Table<'static, Item, Items, Message>>()
     }
 
     fn state(&self) -> Option<State> {
