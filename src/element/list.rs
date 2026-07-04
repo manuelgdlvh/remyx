@@ -13,12 +13,12 @@ use remyx_widgets::{
     list::{List, ListDirection, ListItem, ListState},
 };
 
-impl<Item, Items, Message> Element<Message> for List<'static, Item, Items, Message>
+impl<'a, Item, Items, Message> Element<'a, Message> for List<'a, Item, Items, Message>
 where
     Message: 'static,
     Item: PartialEq + 'static,
-    Items: Borrow<[Item]> + 'static,
-    for<'b> ListItem<'static>: From<&'b Item>,
+    Items: Borrow<[Item]> + 'a,
+    for<'b> ListItem<'a>: From<&'b Item>,
 {
     fn draw(&self, tree: &Tree, area: Rect, buffer: &mut Buffer) {
         tree.state_mut::<ListState, _, _>(|s| {
@@ -126,12 +126,12 @@ where
     fn diff(&self, tree: &mut Tree) {
         let old_length = tree.state::<ListState, _, _>(|s| s.len());
         if old_length > self.len() {
-            tree.state = Element::<Message>::state(self);
+            tree.state = Element::<'a, Message>::state(self);
         }
     }
 
     fn id(&self) -> TypeId {
-        TypeId::of::<List<'static, Item, Items, Message>>()
+        TypeId::of::<List<'static, Item, &'static [Item], Message>>()
     }
 
     fn state(&self) -> Option<State> {

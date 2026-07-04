@@ -16,7 +16,7 @@ use crate::{
     runner::Context,
 };
 
-impl<Message> Element<Message> for Paragraph<'_> {
+impl<'a, Message> Element<'a, Message> for Paragraph<'_> {
     fn draw(&self, tree: &Tree, area: Rect, buffer: &mut Buffer) {
         tree.state_mut::<ParagraphState, _, _>(|s| {
             self.render(area, buffer, s);
@@ -82,7 +82,7 @@ impl<Message> Element<Message> for Paragraph<'_> {
     fn diff(&self, tree: &mut Tree) {
         let length = tree.state::<ParagraphState, _, _>(|s| s.len());
         if self.len() != length {
-            tree.state = Element::<Message>::state(self);
+            tree.state = Element::<'a, Message>::state(self);
         }
     }
 

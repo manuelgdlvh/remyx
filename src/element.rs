@@ -40,7 +40,7 @@ pub struct Tree {
 }
 
 impl Tree {
-    pub fn init<Message>(element: &dyn Element<Message>) -> Self {
+    pub fn init<'a, Message>(element: &(dyn Element<'a, Message> + 'a)) -> Self {
         Self {
             id: element.id(),
             state: element.state(),
@@ -83,7 +83,7 @@ impl Tree {
         f(state)
     }
 
-    pub fn diff<Message>(&mut self, element: &dyn Element<Message>) {
+    pub fn diff<'a, Message>(&mut self, element: &(dyn Element<'a, Message> + 'a)) {
         if !self.id.eq(&element.id()) {
             *self = Tree::init(element);
         } else {
@@ -114,7 +114,7 @@ impl Tree {
     }
 }
 
-pub trait Element<Message> {
+pub trait Element<'a, Message> {
     fn draw(&self, tree: &Tree, area: Rect, buffer: &mut Buffer);
 
     fn update(&self, _tree: &Tree, _area: Rect, _event: Event, _ctx: &mut Context<Message>) {}
@@ -127,14 +127,14 @@ pub trait Element<Message> {
 
     fn diff(&self, _tree: &mut Tree) {}
 
-    fn children(&self) -> &[Box<dyn Element<Message>>] {
+    fn children(&self) -> &[Box<dyn Element<'a, Message> + 'a>] {
         &[]
     }
 }
 
 macro_rules! impl_stateless_element {
     ($ty:ty) => {
-        impl<Message> Element<Message> for $ty {
+        impl<'a, Message> Element<'a, Message> for $ty {
             fn draw(&self, _tree: &Tree, area: Rect, buffer: &mut Buffer) {
                 self.render(area, buffer);
             }
@@ -159,7 +159,7 @@ impl_stateless_element!(Tabs<'_>);
 impl_stateless_element!(RatatuiLogo);
 impl_stateless_element!(RatatuiMascot);
 
-impl<'a, Message, F> Element<Message> for Canvas<'a, F>
+impl<'a, 'b, Message, F> Element<'a, Message> for Canvas<'b, F>
 where
     F: Fn(&mut CanvasContext<'_>),
 {

@@ -1,6 +1,6 @@
 use remyx::crossterm::crossterm::event::{
     DisableMouseCapture, EnableBracketedPaste, EnableFocusChange, EnableMouseCapture, KeyCode,
-    KeyModifiers,
+    KeyEvent, KeyModifiers,
 };
 use remyx::crossterm::crossterm::execute;
 use remyx::crossterm::crossterm::terminal::{disable_raw_mode, enable_raw_mode};
@@ -74,7 +74,7 @@ impl Application for App {
         (self_, None)
     }
 
-    fn view(&self) -> impl Element<Self::Message> {
+    fn view(&self) -> impl Element<'_, Self::Message> {
         let mut table = Table::new(
             Language::ALL,
             [
@@ -174,20 +174,21 @@ impl Application for App {
     fn subscription<Terminal: terminal::Terminal>(
         &self,
     ) -> Vec<Subscription<Terminal, Self::Message>> {
-        let keys = Subscription::key(|key| match key.code {
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                Some(Message::Exit)
-            }
-            KeyCode::Tab => Some(Message::FocusNext),
-            _ => None,
-        });
-
-        vec![keys]
+        vec![Subscription::key(handle_keys)]
     }
 
     fn exit(&self) -> bool {
         self.exit
     }
+}
+
+fn handle_keys(key: KeyEvent) -> impl futures::Stream<Item = Message> {
+    let msg = match key.code {
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Some(Message::Exit),
+        KeyCode::Tab => Some(Message::FocusNext),
+        _ => None,
+    };
+    futures::stream::iter(msg)
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -329,7 +330,7 @@ impl Language {
     }
 }
 
-impl From<&Language> for Row<'static> {
+impl<'a> From<&Language> for Row<'a> {
     fn from(language: &Language) -> Self {
         let mut designer_lines = vec![language.designer().to_string()];
         designer_lines.extend(language.notes().iter().map(|note| note.to_string()));

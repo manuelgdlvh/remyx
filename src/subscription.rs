@@ -122,27 +122,48 @@ where
         Self { id, builder }
     }
 
-    pub fn key<F>(f: F) -> Self
+    pub fn key<S>(f: fn(KeyEvent) -> S) -> Self
     where
-        F: Fn(KeyEvent) -> Option<Message> + 'static,
+        S: futures::Stream<Item = Message> + 'static,
     {
-        struct KeyListener;
-        let mut hasher = DefaultHasher::new();
-        TypeId::of::<KeyListener>().hash(&mut hasher);
-        let id = hasher.finish();
+        let id: u64 = f as usize as u64;
 
         let builder = Box::new(move |terminal: &mut Terminal| {
             terminal
                 .subscribe()
                 .filter_map(move |res| {
                     future::ready(match res {
-                        Ok(val) => match val {
-                            event::Event::Key(key_event) => f(key_event),
-                            _ => None,
-                        },
-                        Err(_) => None,
+                        Ok(event::Event::Key(key_event)) => Some(key_event),
+                        _ => None,
                     })
                 })
+                .flat_map(f)
+                .boxed_local()
+        });
+
+        Self { id, builder }
+    }
+
+    pub fn key_with<I, S>(data: I, f: fn(KeyEvent, &I) -> S) -> Self
+    where
+        I: Hash + 'static,
+        S: futures::Stream<Item = Message> + 'static,
+    {
+        let mut hasher = DefaultHasher::new();
+        data.hash(&mut hasher);
+
+        let id: u64 = f as usize as u64 ^ hasher.finish();
+
+        let builder = Box::new(move |terminal: &mut Terminal| {
+            terminal
+                .subscribe()
+                .filter_map(move |res| {
+                    future::ready(match res {
+                        Ok(event::Event::Key(key_event)) => Some(key_event),
+                        _ => None,
+                    })
+                })
+                .flat_map(move |key_event| f(key_event, &data))
                 .boxed_local()
         });
 

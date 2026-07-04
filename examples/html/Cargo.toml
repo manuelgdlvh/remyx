@@ -10,3 +10,4 @@ rust-version = "1.92"
 remyx = { path = "../..", features =  ["tokio"] }
 reqwest = "0.13.4"
 lol_html = "2.9.0"
+futures = "0.3.32"
