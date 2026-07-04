@@ -5,7 +5,7 @@ use crate::{
     element::{Element, State, Tree},
     runner::Context,
 };
-use crossterm::event::{Event, MouseButton};
+use crossterm::event::{Event, MouseButton, MouseEventKind};
 use ratatui_core::widgets::StatefulWidget;
 use ratatui_core::{buffer::Buffer, layout::Rect};
 use remyx_widgets::{
@@ -64,8 +64,21 @@ where
                             })
                             .flatten()
                     }
-                    crossterm::event::MouseEventKind::ScrollUp => Some(Selection::Previous),
-                    crossterm::event::MouseEventKind::ScrollDown => Some(Selection::Next),
+                    MouseEventKind::ScrollUp => {
+                        tree.state_mut::<ListState, _, _>(|s| {
+                            *s.offset_mut() = s.offset().saturating_sub(1);
+                        });
+                        ctx.redraw();
+                        None
+                    }
+                    MouseEventKind::ScrollDown => {
+                        let max_offset = self.len().saturating_sub(1);
+                        tree.state_mut::<ListState, _, _>(|s| {
+                            *s.offset_mut() = (s.offset() + 1).min(max_offset);
+                        });
+                        ctx.redraw();
+                        None
+                    }
                     _ => None,
                 },
                 _ => None,
@@ -91,8 +104,21 @@ where
                             })
                             .flatten()
                     }
-                    crossterm::event::MouseEventKind::ScrollUp => Some(Selection::Next),
-                    crossterm::event::MouseEventKind::ScrollDown => Some(Selection::Previous),
+                    MouseEventKind::ScrollUp => {
+                        let max_offset = self.len().saturating_sub(1);
+                        tree.state_mut::<ListState, _, _>(|s| {
+                            *s.offset_mut() = (s.offset() + 1).min(max_offset);
+                        });
+                        ctx.redraw();
+                        None
+                    }
+                    MouseEventKind::ScrollDown => {
+                        tree.state_mut::<ListState, _, _>(|s| {
+                            *s.offset_mut() = s.offset().saturating_sub(1);
+                        });
+                        ctx.redraw();
+                        None
+                    }
                     _ => None,
                 },
                 _ => None,
@@ -106,14 +132,23 @@ where
             }
 
             let current = self.selected();
-            let new_index = match selection {
+            let new_index = match &selection {
                 Selection::Previous => current.map_or(0, |i| i.saturating_sub(1)),
                 Selection::Next => current.map_or(0, |i| (i + 1).min(len - 1)),
-                Selection::Index(index) => index.min(len - 1),
+                Selection::Index(index) => (*index).min(len - 1),
             };
 
             if current == Some(new_index) {
                 return;
+            }
+
+            if matches!(selection, Selection::Previous | Selection::Next) {
+                let offset = tree.state::<ListState, _, _>(|s| s.offset());
+                if !is_selected_visible(new_index, offset, items_area.height as usize) {
+                    tree.state_mut::<ListState, _, _>(|s| {
+                        *s.offset_mut() = new_index;
+                    });
+                }
             }
 
             ctx.redraw();
@@ -138,4 +173,8 @@ where
         let length = self.len();
         Some(State::new(ListState::new(length)))
     }
+}
+
+fn is_selected_visible(index: usize, offset: usize, visible_count: usize) -> bool {
+    index >= offset && index < offset + visible_count
 }
