@@ -69,8 +69,21 @@ where
                         })
                         .flatten()
                 }
-                crossterm::event::MouseEventKind::ScrollUp => Some(Movement::Previous),
-                crossterm::event::MouseEventKind::ScrollDown => Some(Movement::Next),
+                crossterm::event::MouseEventKind::ScrollUp => {
+                    tree.state_mut::<TableState, _, _>(|s| {
+                        *s.offset_mut() = s.offset().saturating_sub(1);
+                    });
+                    ctx.redraw();
+                    None
+                }
+                crossterm::event::MouseEventKind::ScrollDown => {
+                    let max_offset = self.len().saturating_sub(1);
+                    tree.state_mut::<TableState, _, _>(|s| {
+                        *s.offset_mut() = (s.offset() + 1).min(max_offset);
+                    });
+                    ctx.redraw();
+                    None
+                }
                 _ => None,
             },
             _ => None,
@@ -83,14 +96,28 @@ where
             }
 
             let current = self.selected();
-            let new_index = match movement {
+            let new_index = match &movement {
                 Movement::Previous => current.map_or(0, |i| i.saturating_sub(1)),
                 Movement::Next => current.map_or(0, |i| (i + 1).min(len - 1)),
-                Movement::At(index) => index.min(len - 1),
+                Movement::At(index) => (*index).min(len - 1),
             };
 
             if current == Some(new_index) {
                 return;
+            }
+
+            if matches!(movement, Movement::Previous | Movement::Next) {
+                let offset = tree.state::<TableState, _, _>(|s| s.offset());
+                if !is_selected_visible(
+                    new_index,
+                    offset,
+                    items_area.height as usize,
+                    self.row_heights(),
+                ) {
+                    tree.state_mut::<TableState, _, _>(|s| {
+                        *s.offset_mut() = new_index;
+                    });
+                }
             }
 
             ctx.redraw();
@@ -115,4 +142,23 @@ where
         let length = self.len();
         Some(State::new(TableState::new(length)))
     }
+}
+
+fn is_selected_visible(
+    index: usize,
+    offset: usize,
+    visible_height: usize,
+    row_heights: impl Iterator<Item = u16>,
+) -> bool {
+    let mut height_sum = 0usize;
+    for (i, h) in row_heights.enumerate().skip(offset) {
+        height_sum += h as usize;
+        if height_sum > visible_height {
+            return false;
+        }
+        if i == index {
+            return true;
+        }
+    }
+    false
 }
