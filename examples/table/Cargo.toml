@@ -8,3 +8,4 @@ rust-version = "1.92"
 
 [dependencies]
 remyx = { path = "../..", features =  ["tokio"] }
+futures = "0.3.32"

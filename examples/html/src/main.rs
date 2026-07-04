@@ -1,7 +1,7 @@
 use lol_html::{HtmlRewriter, Settings, element};
 use remyx::crossterm::crossterm::event::{
     DisableMouseCapture, EnableBracketedPaste, EnableFocusChange, EnableMouseCapture, KeyCode,
-    KeyModifiers,
+    KeyEvent, KeyModifiers,
 };
 use remyx::crossterm::crossterm::execute;
 use remyx::crossterm::crossterm::terminal::{disable_raw_mode, enable_raw_mode};
@@ -76,7 +76,7 @@ impl Application for App {
         (self_, None)
     }
 
-    fn view(&self) -> impl Element<Self::Message> {
+    fn view(&self) -> impl Element<'_, Self::Message> {
         let mut list = List::new(Link::ALL, self.link.as_ref(), |item: &Link| {
             Message::LinkChanged(*item)
         })
@@ -171,20 +171,21 @@ impl Application for App {
     fn subscription<Terminal: terminal::Terminal>(
         &self,
     ) -> Vec<Subscription<Terminal, Self::Message>> {
-        let keys = Subscription::key(|key| match key.code {
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                Some(Message::Exit)
-            }
-            KeyCode::Tab => Some(Message::FocusNext),
-            _ => None,
-        });
-
-        vec![keys]
+        vec![Subscription::key(handle_keys)]
     }
 
     fn exit(&self) -> bool {
         self.exit
     }
+}
+
+fn handle_keys(key: KeyEvent) -> impl futures::Stream<Item = Message> {
+    let msg = match key.code {
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Some(Message::Exit),
+        KeyCode::Tab => Some(Message::FocusNext),
+        _ => None,
+    };
+    futures::stream::iter(msg)
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -198,7 +199,7 @@ impl Link {
     const ALL: &[Link] = &[Link::C, Link::Java, Link::Rust];
 }
 
-impl From<&Link> for ListItem<'static> {
+impl<'a> From<&Link> for ListItem<'a> {
     fn from(link: &Link) -> Self {
         match link {
             Link::Rust => ListItem::new("Rust"),

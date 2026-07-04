@@ -49,7 +49,7 @@ pub trait Application {
     fn init<Runtime: runtime::Runtime>() -> (Self, Option<Task<Self::Message>>)
     where
         Self: Sized;
-    fn view(&self) -> impl Element<Self::Message>;
+    fn view(&self) -> impl Element<'_, Self::Message>;
     fn update<Runtime: runtime::Runtime>(
         &mut self,
         message: Self::Message,

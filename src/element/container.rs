@@ -11,12 +11,12 @@ use crate::{
     runner::Context,
 };
 
-pub struct Container<Message> {
+pub struct Container<'a, Message> {
     layout: Layout,
-    children: Vec<Box<dyn Element<Message>>>,
+    children: Vec<Box<dyn Element<'a, Message> + 'a>>,
 }
 
-impl<Message> Container<Message> {
+impl<'a, Message> Container<'a, Message> {
     pub fn layout(layout: Layout) -> Self {
         Self {
             layout,
@@ -24,14 +24,14 @@ impl<Message> Container<Message> {
         }
     }
 
-    pub fn with(mut self, child: impl Element<Message> + 'static) -> Self {
+    pub fn with(mut self, child: impl Element<'a, Message> + 'a) -> Self {
         self.children.push(Box::new(child));
         self
     }
 
     fn for_each_child<F>(&self, tree: &Tree, area: Rect, mut f: F)
     where
-        F: FnMut(&dyn Element<Message>, &Tree, Rect),
+        F: FnMut(&(dyn Element<'a, Message> + 'a), &Tree, Rect),
     {
         self.layout
             .split(area)
@@ -44,7 +44,7 @@ impl<Message> Container<Message> {
     }
 }
 
-impl<Message: 'static> Element<Message> for Container<Message> {
+impl<'a, Message: 'static> Element<'a, Message> for Container<'a, Message> {
     fn draw(&self, tree: &Tree, area: Rect, buffer: &mut Buffer) {
         self.for_each_child(tree, area, |child, tree, area| {
             child.draw(tree, area, buffer);
@@ -52,10 +52,10 @@ impl<Message: 'static> Element<Message> for Container<Message> {
     }
 
     fn id(&self) -> TypeId {
-        TypeId::of::<Self>()
+        TypeId::of::<Container<'static, Message>>()
     }
 
-    fn children(&self) -> &[Box<dyn Element<Message>>] {
+    fn children(&self) -> &[Box<dyn Element<'a, Message> + 'a>] {
         &self.children
     }
 
