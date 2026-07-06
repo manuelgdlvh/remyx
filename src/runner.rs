@@ -94,8 +94,11 @@ where
             ctx.redraw();
         }
 
-        self.app.view().update(&self.tree, area, event, &mut ctx);
+        self.app
+            .view()
+            .update(&self.tree, area, Clone::clone(&event), &mut ctx);
         if !ctx.should_redraw() {
+            self.terminal.publish(event);
             return false;
         }
 

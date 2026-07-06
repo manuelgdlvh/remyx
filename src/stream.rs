@@ -26,7 +26,7 @@ where
 
 impl<Runtime, Item> Tee<Runtime, Item>
 where
-    Item: Send,
+    Item: Send + Clone,
     Runtime: runtime::Runtime,
 {
     pub fn new(stream: BoxStream<'static, Item>) -> Self {
@@ -47,6 +47,22 @@ where
             }
         })
     }
+
+    pub fn publish(&mut self, item: Item) {
+        let mut index = 0;
+        while index < self.subscribers.len() {
+            let subscriber = &self.subscribers[index];
+
+            match subscriber.try_send(item.clone()) {
+                Err(TrySendError::Closed(_)) => {
+                    self.subscribers.remove(index);
+                }
+                Ok(_) | Err(TrySendError::Full(_)) => {
+                    index += 1;
+                }
+            }
+        }
+    }
 }
 
 impl<Runtime, Item> futures::Stream for Tee<Runtime, Item>
@@ -59,25 +75,27 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
-        let Some(item) = futures::ready!(this.stream.poll_next_unpin(cx)) else {
-            return Poll::Ready(None);
-        };
+        // let Some(item) = futures::ready!(this.stream.poll_next_unpin(cx)) else {
+        //     return Poll::Ready(None);
+        // };
 
-        let mut index = 0;
-        while index < this.subscribers.len() {
-            let subscriber = &this.subscribers[index];
+        this.stream.poll_next_unpin(cx)
 
-            match subscriber.try_send(item.clone()) {
-                Err(TrySendError::Closed(_)) => {
-                    this.subscribers.remove(index);
-                }
-                Ok(_) | Err(TrySendError::Full(_)) => {
-                    index += 1;
-                }
-            }
-        }
+        // let mut index = 0;
+        // while index < this.subscribers.len() {
+        //     let subscriber = &this.subscribers[index];
 
-        Poll::Ready(Some(item))
+        //     match subscriber.try_send(item.clone()) {
+        //         Err(TrySendError::Closed(_)) => {
+        //             this.subscribers.remove(index);
+        //         }
+        //         Ok(_) | Err(TrySendError::Full(_)) => {
+        //             index += 1;
+        //         }
+        //     }
+        // }
+
+        // Poll::Ready(Some(item))
     }
 }
 

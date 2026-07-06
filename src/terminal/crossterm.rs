@@ -78,6 +78,10 @@ where
     {
         self.inner.draw(render_callback)
     }
+
+    fn publish(&mut self, item: Event) {
+        self.event_stream.publish(Ok(item));
+    }
 }
 
 impl<Runtime> Stream for Crossterm<Runtime>
