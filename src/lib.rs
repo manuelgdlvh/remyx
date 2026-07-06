@@ -3,6 +3,7 @@ use std::io;
 
 pub use ratatui_core as ratatui;
 pub use ratatui_crossterm as crossterm;
+pub use ratatui_textarea as textarea;
 pub use remyx_widgets as widgets;
 
 pub use element::Element;

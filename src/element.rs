@@ -22,6 +22,7 @@ pub mod container;
 pub mod list;
 pub mod paragraph;
 pub mod table;
+pub mod text_area;
 
 #[derive(Debug)]
 pub struct State(RefCell<Box<dyn Any>>);

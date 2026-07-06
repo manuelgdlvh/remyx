@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "examples/html", "examples/table"]
+members = [".", "examples/html", "examples/table", "examples/textarea"]
 resolver = "3"
 
 [package]
@@ -19,6 +19,7 @@ rust-version = "1.92"
 ratatui-core = { version = "0.1.1" }
 ratatui-crossterm = { version = "0.1.1" }
 remyx-widgets = { git = "https://github.com/remyx-rs/ratatui-widgets", branch = "main" }
+ratatui-textarea = { git = "https://github.com/remyx-rs/ratatui-textarea", branch = "feature/remyx-prepare" }
 crossterm = { version = "0.29", features = ["event-stream"] }
 futures = { version = "0.3.32" }
 tokio = {version = "1.52.3", features = ["full"], optional = true}
